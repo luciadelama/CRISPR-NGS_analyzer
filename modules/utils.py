@@ -18,6 +18,7 @@ def extract_zip_to_tmp(zip_path: str):
     return tmp_dir
 
 def parse_fastq_metadata(name: str) -> Optional[Tuple[str, str]]:
+    """Parses the FASTQ filename to extract replicate and treatment information."""
     m = re.match(
         r"^Day(?P<day>\d+)_"
         r"(?:(?P<gen>[^_]+)_)?"
@@ -35,31 +36,38 @@ def parse_fastq_metadata(name: str) -> Optional[Tuple[str, str]]:
     rep = m.group("rep")
     treat = (m.group("treat") or "untreated").lower()
     rerun = m.group("rerun")
-    return f"Replica-{rep}", f"Day{day}_{treat}_rerun" if rerun else f"Day{day}_{treat}"
+
+    replica_dir = f"Replica-{rep}"
+    treatment_dir = f"Day{day}_{treat}_rerun" if rerun else f"Day{day}_{treat}"
+
+    return replica_dir, treatment_dir
 
 def reorganize_extracted_fastqs(tmp_path: Path):
+    """
+    Reorganizes FASTQ files in the temporary directory into subdirectories
+    based on their replicate and treatment metadata.
+    """
     for p in Path(tmp_path).rglob("*.fastq.gz"):
         meta = parse_fastq_metadata(p.name)
+
         if meta is None:
             dest = Path(tmp_path) / "Replica-unknown" / "Day-unknown"
         else:
             rep, treat = meta
             dest = Path(tmp_path) / rep / treat
+
         dest.mkdir(parents=True, exist_ok=True)
         newp = dest / p.name
+
+        # Avoid renaming if source and destination are the same
         if p.resolve() != newp.resolve():
             try:
                 p.rename(newp)
             except Exception:
                 pass
 
-# def ensure_tmpdir(prefix="crispr_tmp_"):
-#     """Creates and returns a TemporaryDirectory with a given prefix."""
-#     d = tempfile.TemporaryDirectory(prefix=prefix)
-#     # Keep a strong reference by attaching attribute so it doesn't GC; caller should hold it
-#     return d
-
 def list_replicates_from_outputs(outputs_root: Path):
+    """Lists replicate directories from the outputs root."""
     root = Path(outputs_root)
     reps = sorted([p.name for p in root.iterdir() if p.is_dir() and p.name.startswith("Replica-")])
     if reps:
@@ -67,6 +75,7 @@ def list_replicates_from_outputs(outputs_root: Path):
     return sorted([p.name for p in root.iterdir() if p.is_dir()])
 
 def list_treatments_from_outputs(outputs_root: Path):
+    """Lists treatment directories from the outputs root."""
     root = Path(outputs_root)
     reps = [p for p in root.iterdir() if p.is_dir() and p.name.startswith("Replica-")]
     names = set()
@@ -164,41 +173,26 @@ def process_treatment_folder(treatment_path, wt_seq, mut_seq, amplicon_seq):
         "ReportPath": report_html,
     }
 
-def calculate_sensitivity(df, column="MUT/WT*%", reference_day=None, reference_treatment=None):
+def calculate_sensitivity(df, column="MUT/WT*%", reference_treatment=None):
+    """Calculates sensitivity as percentage relative to a reference treatment or day."""
+    # Return empty series if input is not valid
     if df.empty or column not in df.columns:
         return pd.Series(dtype=float)
+    
+    # Reference defined by treatment name
     if reference_treatment is not None:
         sel = df[df["Treatment"] == reference_treatment]
         if sel.empty:
             return pd.Series([None] * len(df))
         base_value = float(sel[column].iloc[0])
-    elif reference_day is None:
-        base_value = float(df[column].iloc[0])
-    else:
-        pref = f"Day{int(reference_day)}_"
-        sel = df[df["Treatment"].astype(str).str.startswith(pref, na=False)]
-        if "Day{}_untreated".format(int(reference_day)) in df["Treatment"].values:
-            sel = df[df["Treatment"] == "Day{}_untreated".format(int(reference_day))]
-        if sel.empty:
-            return pd.Series([None] * len(df))
-        base_value = float(sel[column].iloc[0])
+
     if base_value == 0:
         return pd.Series([None] * len(df))
+    
     return round(df[column].astype(float) / base_value * 100, 2)
 
 
-# def find_root_folder(tmp_dir_path: str):
-    """Devuelve la primera carpeta dentro del tmp dir (raíz del ZIP)."""
-    roots = [
-        f for f in os.listdir(tmp_dir_path)
-        if os.path.isdir(os.path.join(tmp_dir_path, f))
-    ]
-    if not roots:
-        return None
-    return os.path.join(tmp_dir_path, roots[0])
-
-
-def build_dfs_by_replicate(out_root, samples, wt_seq, mut_seq, amplicon_seq, reference_day=None, reference_treatment=None):
+def build_dfs_by_replicate(out_root, samples, wt_seq, mut_seq, amplicon_seq, reference_treatment=None):
     dfs = {}
     for rep in samples:
         rep_path = Path(out_root) / rep
@@ -212,7 +206,7 @@ def build_dfs_by_replicate(out_root, samples, wt_seq, mut_seq, amplicon_seq, ref
                 dfs[rep] = pd.DataFrame()
                 continue
             df = pd.DataFrame([data])
-            df["Sensitivity"] = calculate_sensitivity(df, "MUT/WT*%", reference_day, reference_treatment)
+            df["Sensitivity"] = calculate_sensitivity(df, "MUT/WT*%", reference_treatment)
             df["Replicate"] = rep
             cols = ["Replicate"] + [c for c in df.columns if c != "Replicate"]
             df = df.loc[:, cols]
@@ -229,7 +223,7 @@ def build_dfs_by_replicate(out_root, samples, wt_seq, mut_seq, amplicon_seq, ref
             dfs[rep] = pd.DataFrame()
             continue
         df = pd.DataFrame(rows)
-        df["Sensitivity"] = calculate_sensitivity(df, "MUT/WT*%", reference_day, reference_treatment)
+        df["Sensitivity"] = calculate_sensitivity(df, "MUT/WT*%", reference_treatment)
         df.insert(0, "Replicate", rep)
         if "ReportPath" in df.columns:
             df = df.drop(columns=["ReportPath"])

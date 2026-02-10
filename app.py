@@ -58,6 +58,12 @@ app_ui = ui.page_fluid(
             ui.input_text_area("wt_seq", "Enter the WT* sequence:", rows=3, placeholder="Paste the WT* sequence here...", width="60%"),
             ui.input_select("ref_treatment", "Reference treatment for sensitivity:", choices=[]),
             ui.output_ui("order_editor"),
+
+            ui.input_action_button(
+                "run_analysis",
+                "Run CRISPResso on uploaded FASTQs",
+                class_="btn-primary",
+            ),
         ),
         col_widths=[6, 6]
     ),
@@ -122,6 +128,13 @@ def server(input, output, session):
     def seqs():
         wt = (input.wt_seq() or "").strip().upper()
         mut = (input.mut_seq() or "").strip().upper()
+
+        print("RAW MUT SEQ:", repr(mut))
+
+        for i, ch in enumerate(mut):
+            if ch in "-------": 
+                print(i, ch, hex(ord(ch)))
+    
         return mut, wt
     
     # ========== Step 1: ZIP upload only (no run yet) ==========
@@ -283,6 +296,19 @@ def server(input, output, session):
     @render.text
     def run_log():
         return run_messages.get() or "No log messages yet."
+    
+    @output
+    @render.text
+    def debug_mut():
+        mut_seq = input.mut_seq()
+
+        print("RAW MUT SEQ:", repr(mut_seq))
+
+        for i, ch in enumerate(mut_seq):
+            if ch in "-------": 
+                print(i, ch, hex(ord(ch)))
+        
+        return "Debug done."
 
     @output
     @render.ui
