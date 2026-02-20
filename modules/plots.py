@@ -55,13 +55,13 @@ def make_indels_plot(df, treat_order=None):
 
 def make_sensitivity_plot(df, treat_order=None):
     # Required columns: "Treatment", "Replicate", and the metric (value_col)
-    required = {"Treatment", "Replicate", "Sensitivity"}
+    required = {"Treatment", "Replicate", "Sensitivity%"}
     if df.empty or not required.issubset(df.columns):
         return None
     
     # Group by Treatment and Replicate, compute mean value (just in case of duplicates)
     agg = (
-        df.groupby(["Replicate", "Treatment"], as_index=False)["Sensitivity"].mean()
+        df.groupby(["Replicate", "Treatment"], as_index=False)["Sensitivity%"].mean()
     )
     replicates = agg["Replicate"].unique().tolist()
     treatments = agg["Treatment"].unique().tolist()
@@ -83,7 +83,7 @@ def make_sensitivity_plot(df, treat_order=None):
     for i, t in enumerate(treatments):
         y = []
         for r in replicates:
-            m = agg.loc[(agg["Replicate"] == r) & (agg["Treatment"] == t), "Sensitivity"]
+            m = agg.loc[(agg["Replicate"] == r) & (agg["Treatment"] == t), "Sensitivity%"]
             y.append(float(m.iloc[0]) if len(m) else np.nan)
         offset = (i - (n_treat - 1) / 2) * width
         ax.bar(x + offset, y, width, label=str(t), color=colors[i % len(colors)])
@@ -91,7 +91,7 @@ def make_sensitivity_plot(df, treat_order=None):
     # Set labels and title
     ax.set_xticks(x)
     ax.set_xticklabels(replicates, rotation=45, ha="right")
-    ax.set_ylabel("Sensitivity")
+    ax.set_ylabel("Sensitivity%")
     ax.set_title("Sensitivity per Replicate")
     if n_treat > 1:
         ax.legend(title="Treatment", ncols=min(n_treat, 3), frameon=False)
