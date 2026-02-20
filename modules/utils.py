@@ -34,7 +34,7 @@ def parse_fastq_metadata(name: str) -> Optional[Tuple[str, str]]:
         return None
     day = m.group("day")
     rep = m.group("rep")
-    treat = (m.group("treat") or "untreated").lower()
+    treat = (m.group("treat") or "untreated")
     rerun = m.group("rerun")
 
     replica_dir = f"Replica-{rep}"
@@ -119,8 +119,6 @@ def process_treatment_folder(treatment_path, wt_seq, mut_seq, amplicon_seq):
     base_name = os.path.basename(actual_dir)
     if base_name.startswith("CRISPResso_on_"):
         sample_dir = os.path.dirname(actual_dir)
-    html_matches = sorted(glob.glob(os.path.join(sample_dir, "CRISPResso_on_*.html")))
-    report_html = html_matches[0] if html_matches else None
 
     # Look for the allele frequency table (filename may vary by sgRNA sequence)
     allele_candidates = [
@@ -149,7 +147,6 @@ def process_treatment_folder(treatment_path, wt_seq, mut_seq, amplicon_seq):
         alleles_path, 
         wt_seq, 
         mut_seq, 
-        amplicon_seq, 
         total_reads
     )
 
@@ -170,7 +167,6 @@ def process_treatment_folder(treatment_path, wt_seq, mut_seq, amplicon_seq):
         "Reads (Modified)": modif_data["modified_reads"],
         "MUT/WT*%": mut_wt_data["mut_wt_percent"],
         "Total Reads": total_reads,
-        "ReportPath": report_html,
     }
 
 def calculate_sensitivity(df, column="MUT/WT*%", reference_treatment=None):
@@ -206,12 +202,10 @@ def build_dfs_by_replicate(out_root, samples, wt_seq, mut_seq, amplicon_seq, ref
                 dfs[rep] = pd.DataFrame()
                 continue
             df = pd.DataFrame([data])
-            df["Sensitivity"] = calculate_sensitivity(df, "MUT/WT*%", reference_treatment)
+            df["Sensitivity%"] = calculate_sensitivity(df, "MUT/WT*%", reference_treatment)
             df["Replicate"] = rep
             cols = ["Replicate"] + [c for c in df.columns if c != "Replicate"]
             df = df.loc[:, cols]
-            if "ReportPath" in df.columns:
-                df = df.drop(columns=["ReportPath"])
             dfs[rep] = df
             continue
         rows = []
@@ -223,9 +217,7 @@ def build_dfs_by_replicate(out_root, samples, wt_seq, mut_seq, amplicon_seq, ref
             dfs[rep] = pd.DataFrame()
             continue
         df = pd.DataFrame(rows)
-        df["Sensitivity"] = calculate_sensitivity(df, "MUT/WT*%", reference_treatment)
+        df["Sensitivity%"] = calculate_sensitivity(df, "MUT/WT*%", reference_treatment)
         df.insert(0, "Replicate", rep)
-        if "ReportPath" in df.columns:
-            df = df.drop(columns=["ReportPath"])
         dfs[rep] = df
     return dfs

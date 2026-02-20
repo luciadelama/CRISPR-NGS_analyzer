@@ -68,33 +68,6 @@ def _get_frame_reads(filename, total_reads):
         "frameshift_percent": frameshift,
     }
 
-# def _get_input_run(filename):
-    """Extracts --amplicon_seq and --coding_seq values from a CRISPResso command line in a log file."""
-
-    cmd_line = None
-    amplicon_seq = None
-    coding_seq = None
-
-    with open(filename, 'r') as infile:
-        for line in infile:
-            if line.startswith("[Command used]:"):
-                cmd_line = next(infile).strip()
-                parts = cmd_line.split()
-
-                for i, part in enumerate(parts):
-                    if part in ("--amplicon_seq", "-a") and i + 1 < len(parts):
-                        amplicon_seq = parts[i + 1]
-                    elif part in ("--coding_seq", "-c") and i + 1 < len(parts):
-                        coding_seq = parts[i + 1]
-
-                if amplicon_seq or coding_seq:
-                    break
-    
-    return {
-        "amplicon_seq": amplicon_seq,
-        "coding_seq": coding_seq
-    }
-
 def longest_common_substring(s1: str, s2: str):
     """
     Returns both the longest common substring between 
@@ -112,11 +85,10 @@ def longest_common_substring(s1: str, s2: str):
                 current_length = len(substring)
                 if current_length > lcs_length_max:
                     lcs_length_max = current_length
-                    lcs_result = substring
     
-    return lcs_result, lcs_length_max
+    return lcs_length_max
 
-def _get_mut_wt_reads(filename, wt_seq, mut_seq, amplicon, total_reads):
+def _get_mut_wt_reads(filename, wt_seq, mut_seq, total_reads):
     """Reads a tab-separated file and calculates mutated and wild-type read counts and percentages."""
 
     wt_reads = None
@@ -135,20 +107,19 @@ def _get_mut_wt_reads(filename, wt_seq, mut_seq, amplicon, total_reads):
             parts = line.strip().split('\t')
             
             aligned_seq = parts[0]
-            ref_seq = parts[1]
             reads = int(parts[6])
 
-            lcs_wt, length_wt = longest_common_substring(aligned_seq, wt_seq)
-            lcs_mut, length_mut = longest_common_substring(aligned_seq, mut_seq)
+            length_wt = longest_common_substring(aligned_seq, wt_seq)
+            length_mut = longest_common_substring(aligned_seq, mut_seq)
 
-            if ref_seq in amplicon:
-                if length_wt > max_lcs_wt:
-                    wt_reads = reads
-                    max_lcs_wt = length_wt
+            #if ref_seq in amplicon:
+            if length_wt > max_lcs_wt:
+                wt_reads = reads
+                max_lcs_wt = length_wt
 
-                if length_mut > max_lcs_mut:
-                    mut_reads = reads
-                    max_lcs_mut = length_mut
+            if length_mut > max_lcs_mut:
+                mut_reads = reads
+                max_lcs_mut = length_mut
 
     mut_percent = round(mut_reads/total_reads * 100, 2)
     wt_percent = round(wt_reads/total_reads * 100, 2)

@@ -53,17 +53,21 @@ app_ui = ui.page_fluid(
         ),
         ui.card(
             ui.card_header("2) Analyze CRISPResso Results"),
-            ui.input_checkbox_group("sel_replicas", "Select replicates:", choices=[]),
             ui.input_text_area("mut_seq", "Enter the MUT sequence:", rows=3, placeholder="Paste the MUT sequence here...", width="60%"),
             ui.input_text_area("wt_seq", "Enter the WT* sequence:", rows=3, placeholder="Paste the WT* sequence here...", width="60%"),
-            ui.input_select("ref_treatment", "Reference treatment for sensitivity:", choices=[]),
-            ui.output_ui("order_editor"),
-
-            ui.input_action_button(
-                "run_analysis",
-                "Run CRISPResso on uploaded FASTQs",
-                class_="btn-primary",
-            ),
+            
+            ui.layout_columns(
+                ui.div(
+                    ui.output_ui("order_editor"),
+                ),
+                ui.div(
+                    ui.output_ui("ref_picker"),
+                ),
+                ui.div(
+                    ui.output_ui("replicate_picker"),
+                ),
+                col_widths=[4, 4, 4],
+            ),          
         ),
         col_widths=[6, 6]
     ),
@@ -71,8 +75,8 @@ app_ui = ui.page_fluid(
     ui.layout_columns(
         ui.card(
             ui.card_header("Results table"),
-            ui.output_ui("download_ui"),
             ui.output_ui("tabla_dataframe"),
+            ui.output_ui("download_ui"),
         ),
         col_widths=[12]
     ),
@@ -104,6 +108,7 @@ def server(input, output, session):
     tmp_zip_path = reactive.Value(None)   # remember extracted tmp path
     outputs_root = reactive.Value(None)   # remember extracted root path
     replicas_holder = reactive.Value([])  # remember replica names
+    treatments_holder=reactive.Value([])  # remember treatment names
     dfs_by_rep = reactive.Value({})       # {rep: df}
     run_messages = reactive.Value("")     # log messages from CRISPResso run
     #outputs_tmpref = reactive.Value(None)  # <-- mantiene vivo el TemporaryDirectory
@@ -128,12 +133,6 @@ def server(input, output, session):
     def seqs():
         wt = (input.wt_seq() or "").strip().upper()
         mut = (input.mut_seq() or "").strip().upper()
-
-        print("RAW MUT SEQ:", repr(mut))
-
-        for i, ch in enumerate(mut):
-            if ch in "-------": 
-                print(i, ch, hex(ord(ch)))
     
         return mut, wt
     
@@ -154,7 +153,7 @@ def server(input, output, session):
         reorganize_extracted_fastqs(Path(tmp_dir.name))
         tmp_zip_path.set(Path(tmp_dir.name))
 
-        _append_log(f"Uploaded ZIP: {fileinfo[0]['name']} extracted to temporary directory.")
+        _append_log(f"Uploaded ZIP folder: {fileinfo[0]['name']}.")
 
 
     # ========== Step 2: Run CRISPResso2 when button is clicked ==========
@@ -170,16 +169,12 @@ def server(input, output, session):
             return
         
         amplicon_seq = _clean(input.amplicon_seq())
-        coding_seq  = _clean(input.coding_seq())
-        guide_seq    = _clean(input.guide_seq())
+        coding_seq = _clean(input.coding_seq())
+        guide_seq = _clean(input.guide_seq())
         min_aln = input.min_aln_score() or 60
         plot_win = input.plot_window() or 20
 
-        _append_log(f"Amplicon length: {len(amplicon_seq)}")
-        _append_log(f"Coding seq length: {len(coding_seq)}")
-        _append_log(f"Guide seq length: {len(guide_seq)}")
-        _append_log(f"Minimum alignment score: {min_aln}")
-        _append_log(f"Plot window size: {plot_win}")
+        _append_log(f"Amplicon length: {len(amplicon_seq)} / Coding seq length: {len(coding_seq)} / Guide seq length: {len(guide_seq)}")
 
         if not _valid(amplicon_seq) or not _valid(coding_seq) or not _valid(guide_seq):
             _append_log("Invalid sequences. Please check your input.")
@@ -188,11 +183,15 @@ def server(input, output, session):
         # Pair FASTQs and run CRISPResso
         pairs = pair_fastqs(root_path)
         if not pairs:
-            ui.notification_show("No valid FASTQ pairs found in the uploaded ZIP.", type="error")
+            _append_log("No valid FASTQ pairs found in the uploaded ZIP.")
             return
 
-        out_root = Path("/outputs") / f"run-{int(time.time())}"
+        fileinfo = input.zip_fastqs()
+
+        zip_name = Path(fileinfo[0]['name']).stem
+        out_root = Path("/outputs") / zip_name
         out_root.mkdir(parents=True, exist_ok=True)
+
         outputs_root.set(out_root)
         _append_log(f"Running CRISPResso2 into: {out_root}")
 
@@ -212,14 +211,12 @@ def server(input, output, session):
         except Exception as e:
             _append_log(f"CRISPResso2 run failed: {e!r}")
    
-        _append_log("CRISPResso2 finished. Discovering replicates...")
         reps = list_replicates_from_outputs(out_root)
         replicas_holder.set(reps)
-        ui.update_checkbox_group("sel_replicas", choices=reps, selected=reps)
+        # ui.update_checkbox_group("sel_replicas", choices=reps, selected=reps)
         treats = list_treatments_from_outputs(out_root)
-        ui.update_select("ref_treatment", choices=treats, selected=(treats[0] if treats else None))
-        _append_log(f"Replicates found: {', '.join(reps) if reps else '(none)'}")
-        # ui.notification_show("CRISPResso2 finished.", type="message", duration=4)
+        treatments_holder.set(treats)
+        # ui.update_select("ref_treatment", choices=treats, selected=(treats[0] if treats else None))
 
 
     # ========== Step 3: Build DataFrames when inputs ready ==========
@@ -239,14 +236,14 @@ def server(input, output, session):
         mut = (input.mut_seq() or "").strip().upper()               # mut and wt* sequences
         amplicon = (input.amplicon_seq() or "").strip().upper() 
         ref_treat = input.ref_treatment()
-        dfs = build_dfs_by_replicate(root, reps, wt, mut, amplicon, None, ref_treat)
+        dfs = build_dfs_by_replicate(root, reps, wt, mut, amplicon, ref_treat)
         # Save the resulting dictionary of dfs into a reactive value
         dfs_by_rep.set(dfs)             
 
     @reactive.calc
     def df_selected():
         dfs = dfs_by_rep.get() or {}
-        selected = input.sel_replicas() or list(dfs.keys())  # <- auto-selección
+        selected = input.sel_replicas() or list(dfs.keys())  
         frames = [dfs[r] for r in selected if r in dfs and not dfs[r].empty]
         if not frames:
             return pd.DataFrame()
@@ -296,33 +293,18 @@ def server(input, output, session):
     @render.text
     def run_log():
         return run_messages.get() or "No log messages yet."
-    
-    @output
-    @render.text
-    def debug_mut():
-        mut_seq = input.mut_seq()
-
-        print("RAW MUT SEQ:", repr(mut_seq))
-
-        for i, ch in enumerate(mut_seq):
-            if ch in "-------": 
-                print(i, ch, hex(ord(ch)))
-        
-        return "Debug done."
 
     @output
     @render.ui
     def tabla_dataframe():
         # thresholds for highlighting
         threshold = {
-            "Total Reads": 1000,
-            "MUT%": 1.00,
-            "Indel%": 20,
+            "Total Reads": 7000,
+            "MUT%": 0.5,
+            "WT*%": 0.5,
         }
 
         d = df_selected()
-        if d.empty:
-            return ui.HTML("<div class='alert alert-info'>No data</div>")
         d_fmt = d.copy()
 
         # Order treatments and replicates
@@ -394,7 +376,13 @@ def server(input, output, session):
         d = df_selected()
         if d.empty:
             return None
-        return ui.download_button("download", "Download CSV", class_="btn-primary btn-sm")
+        style = "<style>.download-wrapper{display:flex;justify-content:flex-end;margin-top:-10px}</style>"
+        return ui.TagList(
+            ui.HTML(style),
+            ui.HTML("<div class='download-wrapper'>"),
+            ui.download_button("download", "Download CSV", class_="btn-primary btn-sm"),
+            ui.HTML("</div>"),
+        )
     
     @session.download(
         id="download",
@@ -407,26 +395,74 @@ def server(input, output, session):
 
     @output
     @render.ui
+    def replicate_picker():
+        reps = replicas_holder.get() or []
+        if not reps:
+            return None
+        return ui.input_checkbox_group(
+            "sel_replicas",
+            "Select replicates:",
+            choices=reps,
+            selected=reps
+        )
+
+
+    @output
+    @render.ui
+    def ref_picker():
+        treats = treatments_holder.get() or []
+        if not treats:
+            return None
+
+        style = "<style>.picker-editor-wrapper{border:1px solid #ced4da;border-radius:4px;padding:10px;background:#fff}</style>"
+        
+        return ui.TagList(
+            ui.HTML(style),
+            ui.HTML("<div class='picker-editor-wrapper'>"),
+            ui.p("Reference treatment for sensitivity:"),
+            ui.input_select(
+                "ref_treatment",
+                "",
+                choices=treats,
+                selected=treats[0]
+            ),
+            ui.HTML("</div>"),
+        )
+
+
+    @output
+    @render.ui
     def order_editor():
-        d = df_selected()
-        if d.empty or "Treatment" not in d.columns:
-            return ui.HTML("<div class='alert alert-warning'>No treatments to order yet.</div>")
-        base = list(pd.unique(d["Treatment"]))
+        base = treatments_holder.get() or []
+        if not base:
+            return None
+        
         try:
             dnd_raw = input.order_dnd()
         except Exception:
             dnd_raw = None
+
         user_order = []
         if dnd_raw:
             try:
                 user_order = json.loads(dnd_raw) if isinstance(dnd_raw, str) else dnd_raw
             except Exception:
                 user_order = []
+
         render_order = [t for t in user_order if t in base] + [t for t in base if t not in user_order]
-        style = "<style>.order-title{font-size:1rem;font-weight:500;margin:4px 0 8px}.dnd-row{display:grid;grid-template-columns:26px 260px;gap:8px;align-items:center;margin-bottom:6px}.order-num{text-align:right;font-weight:600}.dnd-item{border:1px solid #ced4da;border-radius:4px;padding:6px 8px;background:#fff}.dnd-row.dragging{opacity:.6}</style>"
+        # Build drag-and-drop HTML (AI generated code)
+        style = "<style>.picker-editor-wrapper{border:1px solid #ced4da;border-radius:4px;padding:20px;background:#fff}.order-title{font-size:1rem;font-weight:500;margin:4px 0 8px}.dnd-row{display:grid;grid-template-columns:40px 1fr;gap:12px;align-items:center;margin-bottom:12px}.order-num{text-align:right;font-weight:600;font-size:1.1rem}.dnd-item{border:1px solid #8d959e;border-radius:2px;padding:10px 12px;background:#fff;font-size:1rem}.dnd-row.dragging{opacity:.6}</style>"
         items_html = "".join([f"<div class='dnd-row' draggable='true' data-value='{t}'><span class='order-num'>{i+1}.</span><div class='dnd-item'><span class='dnd-label'>{t}</span></div></div>" for i, t in enumerate(render_order)])
         script = "<script>(function(){var wrap=document.getElementById('dnd-treatments');if(!wrap)return;var last=wrap.getAttribute('data-last')||'';function setOrder(order){var json=JSON.stringify(order);if(json===last)return;last=json;wrap.setAttribute('data-last',json);if(window.Shiny&&window.Shiny.setInputValue){window.Shiny.setInputValue('order_dnd', json, {priority:'event'});}}function updateNumbers(){var rows=[].slice.call(wrap.querySelectorAll('.dnd-row'));rows.forEach(function(el,idx){var num=el.querySelector('.order-num');if(num){num.textContent=(idx+1)+'.';}});var order=rows.map(function(el){return el.getAttribute('data-value');});setOrder(order);}var rows=[].slice.call(wrap.querySelectorAll('.dnd-row'));rows.forEach(function(r){r.addEventListener('dragstart',function(e){r.classList.add('dragging');e.dataTransfer.effectAllowed='move';});r.addEventListener('dragend',function(){r.classList.remove('dragging');updateNumbers();});});wrap.addEventListener('dragover',function(e){e.preventDefault();var dragging=wrap.querySelector('.dnd-row.dragging');if(!dragging)return;var after=getAfter(wrap,e.clientY);if(after==null){wrap.appendChild(dragging);}else{wrap.insertBefore(dragging,after);}});function getAfter(container,y){var els=[].slice.call(container.querySelectorAll('.dnd-row:not(.dragging)'));var closest={offset:-Infinity,el:null};els.forEach(function(child){var box=child.getBoundingClientRect();var offset=y-box.top-box.height/2;if(offset<0 && offset>closest.offset){closest={offset:offset,el:child};}});return closest.el;}})();</script>"
-        return ui.TagList(ui.HTML(style), ui.p("Order of treatment:", class_="order-title"), ui.HTML(f"<div id='dnd-treatments'>{items_html}</div>"), ui.HTML(script))
+        
+        return ui.TagList(
+            ui.HTML(style), 
+            ui.HTML("<div class='picker-editor-wrapper'>"),
+            ui.p("Order of treatment:"), 
+            ui.HTML(f"<div id='dnd-treatments'>{items_html}</div>"),
+            ui.HTML("</div>"),
+            ui.HTML(script),
+        )
 
     @reactive.effect
     @reactive.event(input.view_report)

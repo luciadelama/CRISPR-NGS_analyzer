@@ -128,9 +128,17 @@ def run_crispresso_parallel(
     with ThreadPoolExecutor(max_workers=parallel_samples) as ex:
         # Submit one future per sample
         futs = [ex.submit(one, s, r1, r2) for (s, r1, r2) in pairs]
+
+        failed = []
+        succeeded = 0
+        
         # Process results as soon as each job finishes
         for fut in as_completed(futs):
             sample, code, _, _ = fut.result()
             if code != 0:
+                failed.append(sample)
                 yield f"[ERROR] {sample} failed."
-        yield f"All CRISPResso2 jobs completed ({len(pairs)} samples)."
+            else:
+                succeeded += 1
+                
+        yield f"All CRISPResso2 jobs finished ({len(pairs)} samples): {succeeded} succeeded, {len(failed)} failed."
