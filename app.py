@@ -45,7 +45,7 @@ app_ui = ui.page_fluid(
 
             ui.input_action_button(
                 "run_crispresso",
-                "Run CRISPResso on uploaded FASTQs",
+                "Run CRISPResso2 on uploaded FASTQs",
                 class_="btn-primary",
             ),
             ui.hr(),
