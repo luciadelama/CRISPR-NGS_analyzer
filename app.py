@@ -9,94 +9,234 @@ from modules.utils import extract_zip_to_tmp, list_replicates_from_outputs, buil
 from modules.runner import pair_fastqs, run_crispresso_parallel
 from modules import plots
 
+app_dir = Path(__file__).parent
+
+
 # ===================== UI =====================
+
 app_ui = ui.page_fluid(
-    ui.h2("CRISPResso2 Analyzer"),
+    # ===================== TOP SECTION =====================
 
     ui.layout_columns(
-        ui.card(
-            ui.card_header("1) Upload FASTQs (zip) & set run parameters"),
 
-            # ZIP input grande con texto de ayuda
+        # ---------- LEFT COLUMN ----------
+        ui.div(
+
+            ui.card(
+                ui.card_header(
+                    "1) Upload FASTQs (zip) & set run parameters"
+                ),
+
+                ui.div(
+                    ui.input_file(
+                        "zip_fastqs",
+                        "FASTQs Files:",
+                        accept=[".zip"],
+                        multiple=False,
+                        placeholder="Use the browse button or drag and drop a file here",
+                        width="60%"
+                    ),
+
+                    ui.help_text(
+                        "Naming convention for the folders: "
+                        "Day<day>_[gen]_<variant>_<treatment>_<replicate>_[rerun]_..."
+                    )
+                ),
+
+                ui.layout_columns(
+
+                    ui.div(
+                        ui.input_text(
+                            "amplicon_seq",
+                            "Amplicon Sequence:",
+                            placeholder="Paste the amplicon sequence here..."
+                        ),
+
+                        ui.input_text(
+                            "coding_seq",
+                            "Coding Sequence:",
+                            placeholder="Paste the coding sequence here..."
+                        ),
+
+                        ui.input_text(
+                            "guide_seq",
+                            "Guide Sequence:",
+                            placeholder="Paste the guide sequence here..."
+                        ),
+                    ),
+
+                    ui.div(
+                        ui.input_numeric(
+                            "min_aln_score",
+                            "Minimum alignment score:",
+                            value=60
+                        ),
+
+                        ui.input_numeric(
+                            "plot_window",
+                            "Plot window size:",
+                            value=20
+                        ),
+                    ),
+
+                    col_widths=[4, 4],
+                ),
+
+                ui.input_action_button(
+                    "run_crispresso",
+                    "Run CRISPResso2 on uploaded FASTQs",
+                    class_="btn-primary",
+                ),
+
+                ui.hr(),
+
+                ui.output_text_verbatim(
+                    "run_log",
+                    placeholder=True
+                ),
+
+                # Fill entire left column
+                style="""
+                    flex-grow: 1;
+                    margin-bottom: 0;
+                """
+            ),
+
+            style="""
+                display: flex;
+                flex-direction: column;
+                height: 100%;
+            """
+        ),
+
+
+        # ---------- RIGHT COLUMN ----------
+        ui.div(
+
+            # Logo
             ui.div(
-                ui.input_file(
-                    "zip_fastqs",
-                    "FASTQs Files:",
-                    accept=[".zip"],
-                    multiple=False,
-                    placeholder="Use the browse button or drag and drop a file here",
+                ui.img(
+                    src="/images/crispresso2_analyzer_logo.png",
+                    style="""
+                        width: 65%;
+                        max-width: 520px;
+                        height: auto;
+                        display: block;
+                    """
+                ),
+
+                style="""
+                    display: flex;
+                    justify-content: flex-end;
+                    align-items: center;
+                    margin-bottom: 12px;
+                    padding-right: 10px;
+                """
+            ),
+
+            # Card 2
+            ui.card(
+                ui.card_header(
+                    "2) Analyze CRISPResso Results"
+                ),
+
+                ui.input_text_area(
+                    "mut_seq",
+                    "Enter the MUT sequence:",
+                    rows=3,
+                    placeholder="Paste the MUT sequence here...",
                     width="60%"
                 ),
-                ui.help_text("Naming convention for the folders: Day<day>_[gen]_<variant>_<treatment>_<replicate>_[rerun]_...")
+
+                ui.input_text_area(
+                    "wt_seq",
+                    "Enter the WT* sequence:",
+                    rows=3,
+                    placeholder="Paste the WT* sequence here...",
+                    width="60%"
+                ),
+
+                ui.layout_columns(
+
+                    ui.div(
+                        ui.output_ui("order_editor"),
+                    ),
+
+                    ui.div(
+                        ui.output_ui("ref_picker"),
+                    ),
+
+                    ui.div(
+                        ui.output_ui("replicate_picker"),
+                    ),
+
+                    col_widths=[4, 4, 4],
+                ),
+
+                # Fill remaining space below logo
+                style="""
+                    flex-grow: 1;
+                    margin-bottom: 0;
+                """
             ),
 
-            ui.layout_columns(
-                ui.div(
-                    ui.input_text("amplicon_seq", "Amplicon Sequence:", placeholder="Paste the amplicon sequence here..."),
-                    ui.input_text("coding_seq", "Coding Sequence:", placeholder="Paste the coding sequence here..."),
-                    ui.input_text("guide_seq", "Guide Sequence:", placeholder="Paste the guide sequence here..."),
-                ),
-                ui.div(
-                    ui.input_numeric("min_aln_score", "Minimum alignment score:", value=60),
-                    ui.input_numeric("plot_window", "Plot window size:", value=20),
-                ),
-                col_widths=[4, 4],
-            ),
+            style="""
+                display: flex;
+                flex-direction: column;
+                height: 100%;
+            """
+        ),
 
-            ui.input_action_button(
-                "run_crispresso",
-                "Run CRISPResso2 on uploaded FASTQs",
-                class_="btn-primary",
-            ),
-            ui.hr(),
-            ui.output_text_verbatim("run_log", placeholder=True),
-        ),
-        ui.card(
-            ui.card_header("2) Analyze CRISPResso Results"),
-            ui.input_text_area("mut_seq", "Enter the MUT sequence:", rows=3, placeholder="Paste the MUT sequence here...", width="60%"),
-            ui.input_text_area("wt_seq", "Enter the WT* sequence:", rows=3, placeholder="Paste the WT* sequence here...", width="60%"),
-            
-            ui.layout_columns(
-                ui.div(
-                    ui.output_ui("order_editor"),
-                ),
-                ui.div(
-                    ui.output_ui("ref_picker"),
-                ),
-                ui.div(
-                    ui.output_ui("replicate_picker"),
-                ),
-                col_widths=[4, 4, 4],
-            ),          
-        ),
-        col_widths=[6, 6]
+        col_widths=[6, 6],
+
+        style="""
+            margin-top: 10px;
+            align-items: stretch;
+        """
     ),
+    
+    # ===================== RESULTS TABLE =====================
 
     ui.layout_columns(
+
         ui.card(
             ui.card_header("Results table"),
+
             ui.output_ui("tabla_dataframe"),
+
             ui.output_ui("download_ui"),
         ),
+
         col_widths=[12]
     ),
 
+
+    # ===================== PLOTS =====================
+
     ui.layout_columns(
+
+        # Left plot column
         ui.layout_columns(
+
             ui.card(
                 ui.card_header("Frameshift% Plot"),
                 ui.output_plot("plot_frameshift"),
             ),
+
             ui.card(
                 ui.card_header("Indels% Plot"),
                 ui.output_plot("plot_indels"),
             ),
+
             col_widths=[12, 12],
         ),
+
+        # Right plot
         ui.card(
             ui.card_header("Sensitivity Plot"),
             ui.output_plot("plot_sensitivity"),
         ),
+
         col_widths=[6, 6]
     ),
 )
@@ -502,4 +642,10 @@ def server(input, output, session):
         return plots.make_sensitivity_plot(d, treat_order=order)
         
 
-app = App(app_ui, server)
+app = App(
+    app_ui,
+    server,
+    static_assets={
+        "/images": app_dir / "docs" / "images"
+    }
+)
