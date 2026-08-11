@@ -111,7 +111,7 @@ def server(input, output, session):
     treatments_holder=reactive.Value([])  # remember treatment names
     dfs_by_rep = reactive.Value({})       # {rep: df}
     run_messages = reactive.Value("")     # log messages from CRISPResso run
-    #outputs_tmpref = reactive.Value(None)  # <-- mantiene vivo el TemporaryDirectory
+    #outputs_tmpref = reactive.Value(None)  # <-- TemporaryDirectory
 
     def _append_log(msg:str):
         current = run_messages.get() or ""
@@ -125,7 +125,7 @@ def server(input, output, session):
     def _valid(seq):
         if not seq:
             return False
-        allowed = set("ACGTN")  
+        allowed = set("ACGTN-")  
         return set(seq).issubset(allowed)
     
     # Store cleaned sequences for use in multiple places
