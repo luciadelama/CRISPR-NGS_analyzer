@@ -116,7 +116,7 @@ app_ui = ui.page_fluid(
             # Logo
             ui.div(
                 ui.img(
-                    src="/images/crispresso2_analyzer_logo.png",
+                    src="/images/crisprngs_analyzer_logo.png",
                     style="""
                         width: 65%;
                         max-width: 520px;
